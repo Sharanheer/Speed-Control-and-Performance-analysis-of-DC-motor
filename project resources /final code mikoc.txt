@@ -1,0 +1,161 @@
+   float pro,i,der,pOut,iOut,dOut,out;
+  int error,lastError,count=0,sel=1,overflow_bit=0,timer_zero_bit=0;
+  unsigned short duty=0;
+  unsigned int setPoint,actualOut,storeOne,higherBit=0,lowerBit=0,refresh,adder,reader;
+  char start;
+  int apple[4];
+
+     float pid(int actualOut){
+     error=setPoint-actualOut;
+
+     pOut=error*pro;
+     iOut=iOut+(i*error);
+     if(iOut>255)
+     iOut=255;
+     else if(iOut<0)
+     iOut=0;
+     dOut=-(actualOut-lastError)*der;
+     out = pOut+iOut+dOut;
+     lastError=actualOut;
+     if(out>255){
+     out=255;
+     }
+     else if(out<0){
+     out=0;
+     }
+
+    return out;
+  }
+void pwm(short duty){
+  PWM1_Init(5000);
+  PWM1_Start();
+  PWM1_Set_Duty(duty);
+ }
+ unsigned int feedback()
+    {
+        overflow_bit=0;
+        OPTION_REG=0;
+        T1CON=0;
+        INTCON=0;
+        ADCON0=0;
+        CMCON = 0x07;
+        sel=1;
+        TMR0=0;
+        TMR1H=0x00;
+        TMR1L=0x00;
+        INTCON=0xE0;
+        OPTION_REG.PSA=0;
+        OPTION_REG.PS2=1;
+        OPTION_REG.PS1=0;
+        OPTION_REG.PS0=1;
+        OPTION_REG.T0CS=0;
+        T1CON=0x07;
+        TMR1IE_bit = 1;
+        TMR1IF_bit = 0;
+
+        while(sel==1){
+        }
+        storeOne=(higherBit*256)+lowerBit;
+        actualOut=(60*storeOne*2)/24;                   //24 pulses per rev
+
+        return actualOut;
+        }
+      void interrupt(){
+       if(TMR0IF_bit==1){
+        overflow_bit++;
+
+       if(overflow_bit==152){                              //counter value changed from 8 to 38
+       lowerBit = TMR1L;
+       higherBit = TMR1H;
+       timer_zero_bit=TMR0;
+       OPTION_REG=0;
+       T1CON=0;
+       TMR0IF_bit = 0;
+       TMR1IF_bit = 0;
+       TMR0IE_bit = 0;
+       TMR1IE_bit = 0;
+       sel=0;
+       }
+       TMR0IF_bit = 0;
+       }
+      }
+   void main() {
+    UART1_Init(9600);
+    PWM1_Init(5000);            //added on 3/17
+    PWM1_Start();
+    PWM1_Set_Duty(0);
+    start='i';                  //added on 3/17
+     TXSTA=0x24;
+     RCSTA=0x90;
+   pro=3,i=0.8,der=1.2;    // proportional,integral,derivative gains
+   setPoint=100,sel=1;       // setpoint
+   actualOut=0;                  //actualoutput
+   pOut=0,iOut=0,dOut=0;
+   out=16;
+   error=0,lastError=0;
+   OPTION_REG=0;
+   T1CON=0;
+   INTCON=0;
+   ADCON0=0;
+   CMCON = 0x07;
+     TRISC.RC0=1;
+     TRISC.RC2=0;
+     TRISC.RC6=0;
+      PORTC=0;
+
+    while(1){
+      if (UART1_Data_Ready()||start=='s'){
+            if (UART1_Data_Ready()){
+           start = UART1_Read();
+           PORTB=1;
+           TRISB=0;
+           delay_ms(500);
+           PORTB=0;
+            }
+     if(start=='s'){
+
+     out = pid(actualOut);
+
+     duty=(unsigned short)out;
+     pwm(duty);
+     actualOut = feedback();
+
+        UART1_Write(actualOut);
+
+
+    }
+    else if(start=='g'){
+        PWM1_Init(5000);
+        PWM1_Start();
+        PWM1_Set_Duty(0);
+        actualOut=0;
+         error=0,lastError=0;
+          pOut=0,iOut=0,dOut=0;
+    }
+
+    else if(start=='r'){
+     UART1_Write(1);
+     adder=0;
+     while(adder!=4){
+     refresh=1;
+
+     while(refresh==1){
+     if(UART1_Data_Ready()){
+     apple[adder]=UART1_Read();      // reads data from matlab
+
+     refresh=0;
+     UART1_Write(apple[adder]);      //transmits back to matlab
+     adder++;
+     }
+ }
+ }
+  setPoint=apple[0];
+  pro=apple[1];
+  i=apple[2];
+  der=apple[3];
+
+ }
+    }
+    }
+    }
+    
